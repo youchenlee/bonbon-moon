@@ -6,8 +6,8 @@
     <meta name="description" content="用 3D 互動模型看懂月相變化與日全蝕、日環蝕、日偏蝕。" />
     <title>月亮的臉：月相與日蝕 3D 互動展示</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌗</text></svg>" />
-    <script type="module" crossorigin src="./assets/index-CfDIbVcD.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CEyBhgR8.css">
+    <script type="module" crossorigin src="./assets/index-CHGAtTkd.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BMoghHU6.css">
   </head>
   <body>
     <canvas id="scene"></canvas>
@@ -31,6 +31,7 @@
         <div><dt>月落</dt><dd id="set">18:00</dd></div>
       </dl>
       <p class="note" id="phase-note"></p>
+      <p class="taiwan">📍 台灣 <b id="hour-phases-label">20:00</b>：<span id="moon-alt"></span></p>
 
       <label class="field">
         <span>月亮公轉第 <b id="day-label">0.0</b> 天（共 29.5 天）</span>
@@ -42,17 +43,21 @@
           <input type="range" id="speed" min="0.25" max="5" step="0.25" value="1" />
         </label>
       </div>
+      <label class="field">
+        <span>台灣時間 <b>（每天這個時間抬頭看）</b></span>
+        <input type="range" id="hour-phases" min="0" max="23" step="1" value="20" />
+      </label>
 
       <details open>
         <summary>為什麼月亮會變臉？</summary>
         <p>月亮自己不會發光，它像一顆被手電筒照著的球：<b>永遠有一半被太陽照亮</b>（黃色箭頭是太陽光的方向）。</p>
         <p>月亮大約 29.5 天繞地球一圈。位置不同，我們從地球看到「亮的那一半」的比例就不同，這就是月相。</p>
-        <p>右下角的小窗是「站在地球上看月亮」的畫面（以台灣所在的北半球為準）。</p>
+        <p>地球上的紅點是台灣。右下角的小窗是「站在台灣抬頭看月亮」的畫面，畫面上方是頭頂、下方是地平線，所以月亮亮面的傾斜就是我們實際看到的樣子。換個時間，月亮的位置和高度也會跟著變。</p>
       </details>
     </aside>
 
     <aside class="panel" id="panel-eclipse" hidden>
-      <p class="eyebrow">從紅點的位置看太陽</p>
+      <p class="eyebrow">📍 站在台灣看太陽</p>
       <h2 id="eclipse-kind">看不到日蝕</h2>
       <p class="english" id="eclipse-coverage">太陽被遮住 0%</p>
       <p class="note" id="eclipse-note"></p>
@@ -72,8 +77,8 @@
       </fieldset>
 
       <label class="field">
-        <span>觀察者所在緯度：<b id="lat-label">0°</b></span>
-        <input type="range" id="observer-lat" min="-60" max="60" step="1" value="0" />
+        <span>台灣時間：<b id="hour-eclipse-label">12:00</b></span>
+        <input type="range" id="hour-eclipse" min="0" max="23" step="1" value="12" />
       </label>
 
       <label class="field">
@@ -87,13 +92,13 @@
         <summary>日蝕是怎麼發生的？</summary>
         <p>新月時，月亮跑到太陽和地球中間，月亮的影子落在地球上。站在<b>本影</b>（紅色）裡的人看到太陽整個被遮住，就是日全蝕；站在<b>半影</b>（橘色）裡只看到太陽缺一角，是日偏蝕。</p>
         <p>月亮繞地球的軌道是橢圓。月亮離得遠時，看起來比太陽小一點，本影到不了地面，地面的人看到一圈亮環，這是日環蝕（藍色是偽本影）。</p>
-        <p>月亮的軌道和地球繞太陽的軌道斜了大約 5 度，所以大部分的新月，月亮的影子都從地球上方或下方錯過。拉動「偏上或偏下」試試看。</p>
+        <p>月亮的軌道和地球繞太陽的軌道斜了大約 5 度，所以大部分的新月，月亮的影子都從地球上方或下方錯過。拉動「偏上或偏下」試試看。地球一直在自轉，同一次日蝕，換個時間影子就不會剛好落在台灣。</p>
         <p class="warn">真的看日蝕時，一定要戴合格的日蝕眼鏡，不能直接用眼睛、太陽眼鏡或望遠鏡看太陽。</p>
       </details>
-      <p class="scale-note">模型裡地球、月亮和太陽的大小與距離都經過縮小，但「月亮和太陽看起來差不多大」的比例是對的。</p>
+      <p class="scale-note">模型裡地球、月亮和太陽的大小與距離都經過縮小，但「月亮和太陽看起來差不多大」的比例是對的。季節設定在夏至，台灣在北回歸線上，中午太陽剛好在頭頂。</p>
     </aside>
 
-    <div class="inset" id="inset"><span id="inset-title">從地球看月亮</span></div>
+    <div class="inset" id="inset"><span id="inset-title">從台灣看月亮</span><em id="inset-note"></em></div>
     <div class="phase-strip" id="phase-strip" role="group" aria-label="跳到某個月相"></div>
     <p class="hint">拖曳旋轉・滾輪或雙指縮放</p>
 
