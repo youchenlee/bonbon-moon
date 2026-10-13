@@ -37,7 +37,8 @@ const state = {
   eclipseT: -0.15,
   playingEclipse: false,
   moonDistance: PERIGEE,
-  observerLat: 0,
+  /** 台灣時間（小時）。月相預設晚上 8 點看月亮，日蝕預設中午 */
+  hour: { phases: 20, eclipse: 12 } as Record<Mode, number>,
   moonOffset: 0,
 };
 
@@ -149,8 +150,10 @@ const earthUniforms = {
   uShadowOn: { value: 0 },
 };
 
+// 北極朝太陽傾斜 23.4 度（夏至），台灣在北回歸線上，中午太陽剛好在頭頂
+const TAIWAN_LAT = THREE.MathUtils.degToRad(23.5);
 const earthTilt = new THREE.Group();
-earthTilt.rotation.z = THREE.MathUtils.degToRad(23.4);
+earthTilt.rotation.z = THREE.MathUtils.degToRad(-23.4);
 const earth = new THREE.Mesh(
   new THREE.SphereGeometry(1, 160, 80),
   new THREE.ShaderMaterial({ uniforms: earthUniforms, vertexShader: earthVertex, fragmentShader: earthFragment }),
@@ -170,12 +173,48 @@ const atmosphere = new THREE.Mesh(
 );
 scene.add(earthTilt, atmosphere);
 
-// 日蝕模式中的觀察者（紅點）
+// 台灣（紅點）黏在地球上，跟著地球自轉。地球轉角由台灣時間決定：中午 12 點台灣正對太陽
 const observer = new THREE.Mesh(
   new THREE.SphereGeometry(0.035, 16, 12),
   new THREE.MeshBasicMaterial({ color: 0xff3b30 }),
 );
-scene.add(observer);
+observer.position.set(Math.cos(TAIWAN_LAT), Math.sin(TAIWAN_LAT), 0).multiplyScalar(1.004);
+{
+  const label = document.createElement('canvas');
+  label.width = 128;
+  label.height = 64;
+  const ctx = label.getContext('2d')!;
+  ctx.font = 'bold 40px "PingFang TC", "Noto Sans TC", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+  ctx.strokeText('台灣', 64, 32);
+  ctx.fillStyle = '#ff6b5e';
+  ctx.fillText('台灣', 64, 32);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(label), depthTest: false }));
+  sprite.scale.set(0.5, 0.25, 1);
+  sprite.position.set(0.25, 0.12, 0);
+  sprite.layers.set(LAYER.guides);
+  observer.add(sprite);
+}
+earth.add(observer);
+const taiwan = new THREE.Vector3();
+const zenith = new THREE.Vector3();
+
+/** 依台灣時間轉動地球，更新台灣的世界座標與天頂方向 */
+function placeTaiwan(hour: number) {
+  earth.rotation.y = ((hour - 12) / 24) * Math.PI * 2;
+  earth.updateWorldMatrix(true, true);
+  observer.getWorldPosition(taiwan);
+  zenith.copy(taiwan).normalize();
+}
+
+/** 從台灣看某個位置的仰角（度），負的代表在地平線下 */
+function altitude(target: THREE.Vector3): number {
+  const dir = target.clone().sub(taiwan).normalize();
+  return THREE.MathUtils.radToDeg(Math.asin(dir.dot(zenith)));
+}
 
 // ---------- moon ----------
 
@@ -267,7 +306,10 @@ const speedSlider = $<HTMLInputElement>('#speed');
 const playPhases = $<HTMLButtonElement>('#play-phases');
 const eclipseSlider = $<HTMLInputElement>('#eclipse-t');
 const playEclipse = $<HTMLButtonElement>('#play-eclipse');
-const latSlider = $<HTMLInputElement>('#observer-lat');
+const hourSliders = {
+  phases: $<HTMLInputElement>('#hour-phases'),
+  eclipse: $<HTMLInputElement>('#hour-eclipse'),
+};
 const offsetSlider = $<HTMLInputElement>('#moon-offset');
 const showShadow = $<HTMLInputElement>('#show-shadow');
 const phaseStrip = $('#phase-strip');
@@ -315,10 +357,14 @@ const ECLIPSE_TEXT: Record<EclipseKind, { title: string; note: string }> = {
   annular: { title: '日環蝕', note: '月亮離地球比較遠，看起來比太陽小一點，太陽剩下一圈亮亮的「金環」。' },
 };
 
-function updateEclipseHud(kind: EclipseKind, coverage: number) {
-  setText('#eclipse-kind', ECLIPSE_TEXT[kind].title);
-  setText('#eclipse-note', ECLIPSE_TEXT[kind].note);
-  setText('#eclipse-coverage', `太陽被遮住 ${Math.round(coverage * 100)}%`);
+function updateEclipseHud(kind: EclipseKind, coverage: number, sunAltitude: number) {
+  const text =
+    sunAltitude < 0
+      ? { title: '太陽已下山', note: '這個時間台灣看不到太陽，當然也看不到日蝕。把時間調回白天看看。' }
+      : ECLIPSE_TEXT[kind];
+  setText('#eclipse-kind', text.title);
+  setText('#eclipse-note', text.note);
+  setText('#eclipse-coverage', `太陽被遮住 ${Math.round(coverage * 100)}%・太陽仰角 ${Math.round(sunAltitude)}°`);
   if (document.activeElement !== eclipseSlider) eclipseSlider.value = String(state.eclipseT);
 }
 
@@ -340,9 +386,8 @@ function setMode(mode: Mode) {
   $('#panel-phases').hidden = mode !== 'phases';
   $('#panel-eclipse').hidden = mode !== 'eclipse';
   phaseStrip.hidden = mode !== 'phases';
-  insetTitle.textContent = mode === 'phases' ? '從地球看月亮' : '紅點看到的太陽';
+  insetTitle.textContent = mode === 'phases' ? '從台灣看月亮' : '從台灣看太陽';
   earthUniforms.uShadowOn.value = mode === 'eclipse' ? 1 : 0;
-  observer.visible = mode === 'eclipse';
   shadowGroup.visible = mode === 'eclipse' && showShadow.checked;
   sunRays.visible = mode === 'phases';
   const [position, target] =
@@ -395,11 +440,16 @@ document.querySelectorAll<HTMLInputElement>('input[name="distance"]').forEach((r
     state.moonDistance = radio.value === 'far' ? APOGEE : PERIGEE;
   });
 });
-latSlider.addEventListener('input', () => {
-  state.observerLat = Number(latSlider.value);
-  const lat = state.observerLat;
-  setText('#lat-label', lat === 0 ? '0°（赤道）' : `${lat > 0 ? '北緯' : '南緯'} ${Math.abs(lat)}°`);
-});
+for (const mode of ['phases', 'eclipse'] as const) {
+  const slider = hourSliders[mode];
+  slider.value = String(state.hour[mode]);
+  const label = () => setText(`#hour-${mode}-label`, `${String(state.hour[mode]).padStart(2, '0')}:00`);
+  label();
+  slider.addEventListener('input', () => {
+    state.hour[mode] = Number(slider.value);
+    label();
+  });
+}
 offsetSlider.addEventListener('input', () => {
   state.moonOffset = Number(offsetSlider.value);
   const offset = state.moonOffset;
@@ -418,7 +468,18 @@ const skyColor = new THREE.Color();
 function updatePhases(dt: number) {
   if (state.playingPhases) state.day = (state.day + dt * state.speed) % SYNODIC_MONTH;
   placeMoon(phaseInfo(state.day).angle, PHASE_ORBIT, 0);
+  placeTaiwan(state.hour.phases);
+  const moonAltitude = altitude(moon.position);
+  const sunAltitude = altitude(sunPosition);
+  skyColor.copy(nightSky).lerp(daySky, THREE.MathUtils.smoothstep(sunAltitude, -8, 10));
   updatePhaseHud();
+  setText(
+    '#moon-alt',
+    moonAltitude < 0
+      ? `月亮在地平線下，台灣這時看不到`
+      : `月亮仰角 ${Math.round(moonAltitude)}°${sunAltitude > 0 ? '（白天，天空是亮的）' : ''}`,
+  );
+  setText('#inset-note', moonAltitude < 0 ? '月亮在地平線下' : '');
 }
 
 function updateEclipse(dt: number) {
@@ -427,14 +488,17 @@ function updateEclipse(dt: number) {
     if (state.eclipseT > 1) state.eclipseT = -1;
   }
   placeMoon(state.eclipseT * ECLIPSE_SWEEP, state.moonDistance, state.moonOffset);
-  const lat = THREE.MathUtils.degToRad(state.observerLat);
-  observer.position.set(Math.cos(lat), Math.sin(lat), 0).multiplyScalar(1.004);
+  placeTaiwan(state.hour.eclipse);
   if (shadowGroup.visible) updateShadowCones();
 
-  const view = sunView(observer.position, sunPosition, SUN_RADIUS, moon.position, MOON_RADIUS);
+  const sunAltitude = altitude(sunPosition);
+  const view =
+    sunAltitude < 0 ? { coverage: 0, kind: 'none' as const } : sunView(taiwan, sunPosition, SUN_RADIUS, moon.position, MOON_RADIUS);
   coronaMaterial.opacity = THREE.MathUtils.smoothstep(view.coverage, 0.97, 1);
-  skyColor.copy(nightSky).lerp(daySky, Math.pow(1 - view.coverage, 0.35));
-  updateEclipseHud(view.kind, view.coverage);
+  const daylight = THREE.MathUtils.smoothstep(sunAltitude, -8, 10);
+  skyColor.copy(nightSky).lerp(daySky, daylight * Math.pow(1 - view.coverage, 0.35));
+  updateEclipseHud(view.kind, view.coverage, sunAltitude);
+  setText('#inset-note', sunAltitude < 0 ? '太陽在地平線下' : '');
   return view.coverage;
 }
 
@@ -447,33 +511,34 @@ function renderInset(coverage: number) {
   renderer.setScissor(x, y, rect.width, rect.height);
   renderer.setScissorTest(true);
   insetCamera.aspect = rect.width / rect.height;
-  insetCamera.up.set(0, 1, 0);
   insetCamera.layers.set(0);
+  // 鏡頭放在台灣，頭頂方向朝上，所以小窗裡月亮亮面的傾斜就是台灣看到的樣子
+  insetCamera.position.copy(taiwan);
+  insetCamera.up.copy(zenith);
+  earth.visible = false;
+  atmosphere.visible = false;
+  scene.background = skyColor;
 
   if (state.mode === 'phases') {
     insetCamera.fov = 6.5;
-    insetCamera.layers.enable(LAYER.stars);
-    insetCamera.position.copy(moon.position).normalize().multiplyScalar(1.05);
+    if (skyColor.getHSL({ h: 0, s: 0, l: 0 }).l < 0.2) insetCamera.layers.enable(LAYER.stars);
     insetCamera.lookAt(moon.position);
     insetCamera.updateProjectionMatrix();
-    scene.background = nightSky;
     renderer.render(scene, insetCamera);
   } else {
     insetCamera.fov = 10;
     insetCamera.layers.enable(LAYER.sun);
     insetCamera.layers.enable(LAYER.corona);
     if (coverage > 0.995) insetCamera.layers.enable(LAYER.stars);
-    insetCamera.position.copy(observer.position);
     insetCamera.lookAt(sunPosition);
     insetCamera.updateProjectionMatrix();
-    scene.background = skyColor;
     moonSilhouette.color.copy(skyColor);
     moon.material = moonSilhouette;
-    observer.visible = false;
     renderer.render(scene, insetCamera);
     moon.material = moonMaterial;
-    observer.visible = true;
   }
+  earth.visible = true;
+  atmosphere.visible = true;
   scene.background = null;
   renderer.setScissorTest(false);
 }
@@ -483,7 +548,7 @@ const timer = new THREE.Timer();
 renderer.setAnimationLoop((timestamp) => {
   timer.update(timestamp);
   const dt = Math.min(timer.getDelta(), 0.1);
-  earth.rotation.y += dt * 0.12;
+  // 小窗只畫地平線上的天空；台灣看不到的東西用文字提示
   let coverage = 0;
   if (state.mode === 'phases') updatePhases(dt);
   else coverage = updateEclipse(dt);
